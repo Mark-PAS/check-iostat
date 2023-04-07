@@ -56,6 +56,10 @@
 # - Updated to use bash 4.4 mechanisms
 #
 # by Joseph Waggy / joseph.waggy@gmail.com
+# Version 0.1.0 Sept 2021
+# Changes:
+# - correct misaligned fields
+# - renaming / parser changes
 
 iostat=$(which iostat 2>/dev/null)
 bc=$(which bc 2>/dev/null)
@@ -103,7 +107,8 @@ queue=0
 waittime=0
 printperfdata=0
 STATE="OK"
-samples=2i
+#samples=2i
+samples=2
 status=0
 
 MSG=""
@@ -240,12 +245,12 @@ if [[ "$io" == "1" ]]; then
 TMPD=$($iostat $disk -k -d 10 $samples | grep $disk | tail -1)
 #Requests per second:
 tps=$(echo "$TMPD" | awk '{print $2}')
-read_sec=$(echo "$TMPX" | awk '{print $4}')
-written_sec=$(echo "$TMPX" | awk '{print $5}')
+read_sec=$(echo "$TMPX" | awk '{print $2}')
+written_sec=$(echo "$TMPX" | awk '{print $3}')
 
 #Kb per second:
-kbytes_read_sec=$(echo "$TMPX" | awk '{print $6}')
-kbytes_written_sec=$(echo "$TMPX" | awk '{print $7}')
+kbytes_read_sec=$(echo "$TMPX" | awk '{print $4}')
+kbytes_written_sec=$(echo "$TMPX" | awk '{print $5}')
 
 # "Converting" values to float (string replace , with .)
 tps=${tps/,/.}
@@ -269,7 +274,7 @@ fi
 fi
 # Printing the results:
 MSG="$STATE - I/O stats: Transfers/Sec=$tps Read Requests/Sec=$read_sec Write Requests/Sec=$written_sec KBytes Read/Sec=$kbytes_read_sec KBytes_Written/Sec=$kbytes_written_sec"
-PERFDATA=" | total_io_sec'=$tps;$warn_1;$crit_1; read_io_sec=$read_sec;$warn_2;$crit_2; write_io_sec=$written_sec;$warn_3;$crit_3; kbytes_read_sec=$kbytes_read_sec;$warn_4;$crit_4; kbytes_written_sec=$kbytes_written_sec;$warn_5;$crit_5;"
+PERFDATA=" | total_io_sec=$tps;$warn_1;$crit_1; read_io_sec=$read_sec;$warn_2;$crit_2; write_io_sec=$written_sec;$warn_3;$crit_3; kbytes_read_sec=$kbytes_read_sec;$warn_4;$crit_4; kbytes_written_sec=$kbytes_written_sec;$warn_5;$crit_5;"
 fi
 
 #------------IO Test End-------------
@@ -277,29 +282,32 @@ fi
 #------------Queue Test-------------
 if [[ "$queue" == "1" ]]; then
 qsize=$(echo "$TMPX" | awk '{print $8}')
-qlength=$(echo "$TMPX" | awk '{print $9}')
+qlength=$(echo "$TMPX" | awk '{print $12}')
+qread_size=$(echo "$TMPX" | awk '{print $13}')
+qwrite_size=$(echo "$TMPX" | awk '{print $14}')
 
 # "Converting" values to float (string replace , with .)
-qsize=${qsize/,/.}
 qlength=${qlength/,/.}
+qread_size=${qread_size/,/.}
+qwrite_size=${qwrite_size/,/.}
 
 # Comparing the result and setting the correct level:
 if [[ "$warning" -ne "99999" ]]; then
-if [[ "$(echo "$qsize >= $warn_1" | bc)" == "1" || "$(echo "$qlength >= $warn_2" | bc)" == "1" ]]; then
+if [[ "$(echo "$qlength >= $warn_1" | bc)" == "1" || "$(echo "$qread_size >= $warn_2" | bc)" == "1" || "$(echo "$qwrite_size >= $warn_3" | bc)" == "1" ]]; then
 STATE="WARNING"
 status=1
 fi
 fi
 if [[ "$critical" -ne "99999" ]]; then
-if [[ "$(echo "$qsize >= $crit_1" | bc)" == "1" || "$(echo "$qlength >= $crit_2" | bc)" == "1" ]]; then
+if [[ "$(echo "$qlength >= $crit_1" | bc)" == "1" || "$(echo "$qread_size >= $crit_2" | bc)" == "1" || "$(echo "$qwrite_size >= $crit_3" | bc)" == "1" ]]; then
 STATE="CRITICAL"
 status=2
 fi
 fi
 
 # Printing the results:
-MSG="$STATE - Disk Queue Stats: Average Request Size=$qsize Average Queue Length=$qlength"
-PERFDATA=" | qsize=$qsize;$warn_1;$crit_1; queue_length=$qlength;$warn_2;$crit_2;"
+MSG="$STATE - Disk Queue Stats: Average Queue Length=$qlength, Average Read Size=$qread_size kilobytes, Average Write Size=$qwrite_size kilobytes"
+PERFDATA=" | qlength=$qlength;$warn_1;$crit_1; qread_size=$qread_size;$warn_2;$crit_2; qwrite_size=$qwrite_size;$warn_3;$crit_3;"
 fi
 
 #------------Queue Test End-------------
@@ -308,14 +316,12 @@ fi
 
 #Parse values. Warning - svc time will soon be deprecated and these will need to be changed. Future parser could look at first line (labels) to suggest correct column to return
 if [[ "$waittime" == "1" ]]; then
-avgwait=$(echo "$TMPX" | awk '{print $10}')
-avgrwait=$(echo "$TMPX" | awk '{print $11}')
-avgwwait=$(echo "$TMPX" | awk '{print $12}')
-avgsvctime=$(echo "$TMPX" | awk '{print $13}')
-avgcpuutil=$(echo "$TMPX" | awk '{print $14}')
+avgrwait=$(echo "$TMPX" | awk '{print $10}')
+avgwwait=$(echo "$TMPX" | awk '{print $11}')
+avgsvctime=$(echo "$TMPX" | awk '{print $15}')
+avgcpuutil=$(echo "$TMPX" | awk '{print $16}')
 
 # "Converting" values to float (string replace , with .)
-avgwait=${avgwait/,/.}
 avgrwait=${avgrwait/,/.}
 avgwwait=${avgwwait/,/.}
 avgsvctime=${avgsvctime/,/.}
@@ -323,21 +329,21 @@ avgcpuutil=${avgcpuutil/,/.}
 
 # Comparing the result and setting the correct level:
 if [[ "$warning" -ne "99999" ]]; then
-if [[ "$(echo "$avgwait >= $warn_1" | bc)" == "1" || "$(echo "$avgrwait >= $warn_2" | bc -q)" == "1" || "$(echo "$avgwwait >= $warn_3" | bc)" == "1" || "$(echo "$avgsvctime >= $warn_4" | bc -q)" == "1" || "$(echo "$avgcpuutil >= $warn_5" | bc)" == "1" ]]; then
+if [[ "$(echo "$avgrwait >= $warn_1" | bc -q)" == "1" || "$(echo "$avgwwait >= $warn_2" | bc)" == "1" || "$(echo "$avgsvctime >= $warn_3" | bc -q)" == "1" || "$(echo "$avgcpuutil >= $warn_4" | bc)" == "1" ]]; then
 STATE="WARNING"
 status=1
 fi
 fi
 if [[ "$critical" -ne "99999" ]]; then
-if [[ "$(echo "$avgwait >= $crit_1" | bc)" == "1" || "$(echo "$avgrwait >= $crit_2" | bc -q)" == "1" || "$(echo "$avgwwait >= $crit_3" | bc)" == "1" || "$(echo "$avgsvctime >= $crit_4" | bc -q)" == "1" || "$(echo "$avgcpuutil >= $crit_5" | bc)" == "1" ]]; then
+if [[ "$(echo "$avgrwait >= $crit_1" | bc -q)" == "1" || "$(echo "$avgwwait >= $crit_2" | bc)" == "1" || "$(echo "$avgsvctime >= $crit_3" | bc -q)" == "1" || "$(echo "$avgcpuutil >= $crit_4" | bc)" == "1" ]]; then
 STATE="CRITICAL"
 status=2
 fi
 fi
 
 # Printing the results:
-MSG="$STATE - Wait Time Stats: Avg I/O Wait Time (ms)=$avgwait Avg Read Wait Time (ms)=$avgrwait Avg Write Wait Time (ms)=$avgwwait Avg Service Wait Time (ms)=$avgsvctime Avg CPU Utilization=$avgcpuutil"
-PERFDATA=" | avg_io_waittime_ms=$avgwait;$warn_1;$crit_1; avg_r_waittime_ms=$avgrwait;$warn_2;$crit_2; avg_w_waittime_ms=$avgwwait;$warn_3;$crit_3; avg_service_waittime_ms=$avgsvctime;$warn_4;$crit_4; avg_cpu_utilization=$avgcpuutil;$warn_5;$crit_5;"
+MSG="$STATE - Avg Read Wait Time (ms)=$avgrwait Avg Write Wait Time (ms)=$avgwwait Avg Service Wait Time (ms)=$avgsvctime Avg CPU Utilization=$avgcpuutil"
+PERFDATA=" | avg_r_waittime_ms=$avgrwait;$warn_1;$crit_1; avg_w_waittime_ms=$avgwwait;$warn_2;$crit_2; avg_service_waittime_ms=$avgsvctime;$warn_3;$crit_3; avg_cpu_utilization=$avgcpuutil;$warn_4;$crit_4;"
 fi
 
 #------------Wait Time End-------------
@@ -349,4 +355,3 @@ echo -n "$PERFDATA"
 fi
 echo ""
 exit $status
-#----------/check_iostat.sh----------- 
